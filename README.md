@@ -2,7 +2,7 @@
 
 Beaming Bog is a Python-based web scraping tool inspired by Screaming Frog. 
 
-This is a command line tool which will scan a domain and generate a CSV of the URLs, Title tags, META descriptions and all H1 and H2 tags all links pages within the site.
+This is a a simple command line tool scans a domain and then generate a CSV of the URLs, Title tags, META descriptions and all H1 and H2 tags all links pages within the site.
 
 ## Usage
 
