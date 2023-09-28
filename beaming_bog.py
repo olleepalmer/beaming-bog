@@ -61,8 +61,10 @@ def scrape_page(url, domain):
     return page_data, links
 
 
-def main():
-    input_url = input("Enter the URL: ")
+
+
+def main():   
+    input_url = input("💩 Enter the URL: ")
     try:
         start_url = sanitise_url(input_url)
     except ValueError as e:
@@ -90,7 +92,7 @@ def main():
             print(f"{current_url} ✅")
             
             for link in links:
-                if link not in visited_urls:
+                if link not in visited_urls and '?page=' not in link:
                     to_visit_urls.add(link)
 
             visited_urls.add(current_url)
