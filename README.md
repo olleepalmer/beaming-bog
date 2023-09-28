@@ -8,9 +8,7 @@ This is a command line tool which will scan a domain and generate a CSV of the U
 
 1. Clone this repo
 
-2. Run the script at the command line:
-
-```sh python beaming-bog.py```
+2. Run the script at the command line: ```sh python beaming-bog.py```
 
 3. It will prompt you for a URL. You can enter just the domain name and it will append `www.` if applicable and try `https://` or if not available, fall back to `http://`.
 
