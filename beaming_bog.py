@@ -40,15 +40,14 @@ def scrape_page(url, domain):
     soup = BeautifulSoup(response.text, 'html.parser')
     page_data = {'URL': url, 'Status code': response.status_code}
 
-    # Extract other required data from the page
     for h_tag in ['H1', 'H2']:
-        tags = [tag.text.strip() for tag in soup.find_all(h_tag.lower())]  # Stripping whitespaces here
+        tags = [tag.text.strip() for tag in soup.find_all(h_tag.lower())]
         for i, tag_text in enumerate(tags, 1):
             page_data[f'{h_tag} - {i}'] = tag_text
 
     page_data.update({
-        'Title': soup.title.string.strip() if soup.title else '',  # Stripping whitespaces here
-        'META Description': soup.find('meta', {'name': 'description'})['content'].strip() if soup.find('meta', {'name': 'description'}) else ''  # Stripping whitespaces here
+        'Title': soup.title.string.strip() if soup.title else '',
+        'META Description': soup.find('meta', {'name': 'description'})['content'].strip() if soup.find('meta', {'name': 'description'}) else ''
     })
 
     links = []
@@ -94,6 +93,18 @@ def main():
                     to_visit_urls.add(link)
 
     # Write the scraped data to CSV
+    sanitised_url = re.sub(r'[\\/:*?"<>|\s]', '_', start_url)
+    filename = f"{sanitised_url}_scraped_results.csv"
+
+    column_order = ['Status code', 'URL', 'Title', 'META Description'] + \
+                   sorted([col for col in all_headers if col not in {'URL', 'Title', 'META Description', 'Status code'}],
+                          key=lambda x: (x.split('-')[0], int(x.split('-')[1])) if '-' in x and x.split('-')[0].startswith('H') else (x, 0))
+
+    with open(filename, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=column_order)
+        writer.writeheader()
+        for row in all_rows:
+            writer.writerow(row)
 
 if __name__ == "__main__":
     main()
