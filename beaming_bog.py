@@ -29,7 +29,10 @@ def is_pagination_link(link):
 
 def scrape_page(url, domain):
     try:
-        response = requests.get(url)
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+        response = requests.get(url, headers=headers)
+        print('got something')
+        print(response)
         if 'text/html' not in response.headers.get('Content-Type', ''):
             print(f"Filtered out: {url}")
             return None, []
@@ -74,23 +77,36 @@ def main():
     to_visit_urls = {start_url}
     all_headers = set(['URL', 'Title', 'META Description', 'Status code'])
     all_rows = []
+    retry_urls = []
 
-    while to_visit_urls:
-        current_url = to_visit_urls.pop()
-        visited_urls.add(current_url)
+    def getData():
+        while to_visit_urls:
+            current_url = to_visit_urls.pop()
+            visited_urls.add(current_url)
 
-        if is_pagination_link(current_url):
-            continue
+            if is_pagination_link(current_url):
+                continue
 
-        page_data, links = scrape_page(current_url, domain)
-        if page_data:
-            all_headers.update(page_data.keys())
-            all_rows.append(page_data)
-            print(f"{current_url} ✅")
-            
-            for link in links:
-                if link not in visited_urls:
-                    to_visit_urls.add(link)
+            page_data, links = scrape_page(current_url, domain)
+            if page_data:
+                all_headers.update(page_data.keys())
+                if page_data['Status code'] == 429:
+                    retry_urls.append(current_url)
+                else:
+                    all_rows.append(page_data)
+                    print(f"{current_url} ✅")
+                    
+                    for link in links:
+                        if link not in visited_urls:
+                            to_visit_urls.add(link)
+    getData()
+
+    if retry_urls.__len__ != 0:
+        print(f"retying {retry_urls.__len__} urls")
+        for retry_url in retry_urls:
+            to_visit_urls.add(retry_url)
+        getData()
+
 
     # Write the scraped data to CSV
     sanitised_url = re.sub(r'[\\/:*?"<>|\s]', '_', start_url)
