@@ -89,7 +89,7 @@ def scrape_page(url:URL, domain:Domain) -> tuple[dict[str, Any], list] | None:
     })
 
     links = []
-    # Note that some links will be revealed if you preform a certain action for example loggin in as Admin will reveal Admin Dash link 
+    # Note that some links will be revealed if you perform a certain action for example logging in as Admin will reveal Admin Dash link 
 
     for a in soup.find_all('a', href=True):
         link = normalize_url(urljoin(url, a['href']))
@@ -102,7 +102,7 @@ def scrape_page(url:URL, domain:Domain) -> tuple[dict[str, Any], list] | None:
     return page_data, links
 
 def main():   
-    input_url = input("Enter the URL: ")
+    input_url = input("💩 Enter the URL: ")
     try:
         start_url = sanitise_url(input_url)
     except ValueError as e:
