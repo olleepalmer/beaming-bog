@@ -3,34 +3,69 @@ from bs4 import BeautifulSoup
 import csv
 from urllib.parse import urlparse, urljoin
 import re
+from typing import Any
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 import threading
 
 EXCLUDED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'docx', 'xlsx', 'zip', 'rar']
+type URL = str
+type Domain = str
 
-def normalize_url(url):
-    return url.lower().rstrip('/')
+def normalize_url(url) -> URL:
+    '''
+    Lower case url and remove any white space at the end
+    '''
 
-def get_domain(url):
+    return url.lower().rstrip('/') 
+
+def get_domain(url) -> Domain:
+    '''
+    returns scheme://netloc
+
+    Example : https://github.com
+    '''
+
     parsed_url = urlparse(url)
     domain = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_url)
     return domain
 
-def sanitise_url(url):
+def sanitise_url(url:URL) -> URL:
+
     if not re.match(r'http(s?)://', url):
         url = 'http://' + url
     return normalize_url(url)
 
-def is_pagination_link(link):
+def is_pagination_link(url:URL) -> bool:
+    '''
+    check for pagination
+    '''
     pagination_patterns = [
         r'\?page=', r'\?p=', r'\?pg=', r'\?pagenumber=', r'\?start=', r'\?offset=',
         r'/page/', r'/p/', r'/pages/', r'#page='
     ]
     pattern = '|'.join(pagination_patterns)
-    return re.search(pattern, link) is not None
+    return re.search(pattern, url) is not None
 
-def scrape_page(url, domain):
+def scrape_page(url:URL, domain:Domain) -> tuple[dict[str, Any], list] | None:
+    '''
+    page_data contains 
+    
+
+    - H1, H2 tags
+
+    - Title
+
+    - Meta Description 
+
+    - URL, Status code
+    
+    links = All a tag links in page
+
+    if there is an error return'll be None, []
+    '''
+
+    
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
         response = requests.get(url, headers=headers)
@@ -56,6 +91,8 @@ def scrape_page(url, domain):
     })
 
     links = []
+    # Note that some links will be revealed if you perform a certain action for example logging in as Admin will reveal Admin Dash link 
+
     for a in soup.find_all('a', href=True):
         link = normalize_url(urljoin(url, a['href']))
         if (get_domain(link) == domain and
