@@ -10,7 +10,7 @@ import re
 import logging
 
 from .config import ResponseMetrics
-from .analyzer import PageAnalysis, SEOIssue
+from .analyser import PageAnalysis, SEOIssue
 
 
 logger = logging.getLogger(__name__)
