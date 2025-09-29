@@ -1,193 +1,269 @@
-import requests
-from bs4 import BeautifulSoup
-import csv
-from urllib.parse import urlparse, urljoin
-import re
-from typing import Any
-from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
-import threading
+#!/usr/bin/env python3
+"""
+Beaming Bog v2 - A free Screaming Frog alternative
+Main entry point using the new modular architecture
+"""
+import argparse
+import logging
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+import time
 
-EXCLUDED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'docx', 'xlsx', 'zip', 'rar']
-type URL = str
-type Domain = str
+from src.config import CrawlConfig
+from src.crawler import Crawler
+from src.parser import Parser
+from src.analyzer import Analyzer
+from src.exporter import Exporter
 
-def normalize_url(url) -> URL:
-    '''
-    Lower case url and remove any white space at the end
-    '''
 
-    return url.lower().rstrip('/') 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def get_domain(url) -> Domain:
-    '''
-    returns scheme://netloc
 
-    Example : https://github.com
-    '''
-
-    parsed_url = urlparse(url)
-    domain = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_url)
-    return domain
-
-def sanitise_url(url:URL) -> URL:
-
-    if not re.match(r'http(s?)://', url):
+def sanitize_url(url: str) -> str:
+    """Sanitize and validate URL"""
+    if not url.startswith(('http://', 'https://')):
         url = 'http://' + url
-    return normalize_url(url)
-
-def is_pagination_link(url:URL) -> bool:
-    '''
-    check for pagination
-    '''
-    pagination_patterns = [
-        r'\?page=', r'\?p=', r'\?pg=', r'\?pagenumber=', r'\?start=', r'\?offset=',
-        r'/page/', r'/p/', r'/pages/', r'#page='
-    ]
-    pattern = '|'.join(pagination_patterns)
-    return re.search(pattern, url) is not None
-
-def scrape_page(url:URL, domain:Domain) -> tuple[dict[str, Any], list] | None:
-    '''
-    page_data contains 
     
-
-    - H1, H2 tags
-
-    - Title
-
-    - Meta Description 
-
-    - URL, Status code
+    # Validate URL
+    parsed = urlparse(url)
+    if not parsed.netloc:
+        raise ValueError(f"Invalid URL: {url}")
     
-    links = All a tag links in page
+    return url.lower().rstrip('/')
 
-    if there is an error return'll be None, []
-    '''
 
+def main():
+    """Main entry point"""
+    parser = argparse.ArgumentParser(
+        description='💩 Beaming Bog - SEO Crawler and Analyzer'
+    )
+    
+    # Positional argument
+    parser.add_argument(
+        'url',
+        nargs='?',
+        help='URL to crawl (optional if using interactive mode)'
+    )
+    
+    # Configuration options
+    parser.add_argument(
+        '-w', '--workers',
+        type=int,
+        default=10,
+        help='Number of concurrent workers (default: 10)'
+    )
+    
+    parser.add_argument(
+        '-d', '--depth',
+        type=int,
+        default=10,
+        help='Maximum crawl depth (default: 10)'
+    )
+    
+    parser.add_argument(
+        '-m', '--max-urls',
+        type=int,
+        help='Maximum number of URLs to crawl'
+    )
+    
+    parser.add_argument(
+        '--no-robots',
+        action='store_true',
+        help='Ignore robots.txt'
+    )
+    
+    parser.add_argument(
+        '--no-redirects',
+        action='store_true',
+        help="Don't follow redirects"
+    )
+    
+    parser.add_argument(
+        '-f', '--format',
+        choices=['csv', 'json', 'html'],
+        default='csv',
+        help='Export format (default: csv)'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        help='Output file path (default: domain_timestamp.format)'
+    )
+    
+    parser.add_argument(
+        '-c', '--config',
+        help='Configuration file path (JSON)'
+    )
+    
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Enable verbose logging'
+    )
+    
+    args = parser.parse_args()
+    
+    # Set logging level
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+    
+    # Get URL
+    if args.url:
+        start_url = args.url
+    else:
+        # Interactive mode
+        start_url = input("💩 Enter the URL: ")
     
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
-        response = requests.get(url, headers=headers)
-        #print(response)
-        if 'text/html' not in response.headers.get('Content-Type', ''):
-            print(f"Filtered out: {url}")
-            return None, []
-    except Exception as e:
-        print(f"Failed to retrieve {url}: {e}")
-        return None, []
-
-    soup = BeautifulSoup(response.text, 'html.parser')
-    page_data = {'URL': url, 'Status code': response.status_code}
-
-    for h_tag in ['H1', 'H2']:
-        tags = [tag.text.strip() for tag in soup.find_all(h_tag.lower())]
-        for i, tag_text in enumerate(tags, 1):
-            page_data[f'{h_tag} - {i}'] = tag_text
-
-    page_data.update({
-        'Title': soup.title.string.strip() if soup.title else '',
-        'META Description': soup.find('meta', {'name': 'description'})['content'].strip() if soup.find('meta', {'name': 'description'}) else ''
-    })
-
-    links = []
-    # Note that some links will be revealed if you perform a certain action for example logging in as Admin will reveal Admin Dash link 
-
-    for a in soup.find_all('a', href=True):
-        link = normalize_url(urljoin(url, a['href']))
-        if (get_domain(link) == domain and
-                not any(ext in link for ext in EXCLUDED_EXTENSIONS) and
-                not any(pattern in link for pattern in ['cart', 'search', 'terms-of-service']) and
-                '#' not in link):
-            links.append(link)
-
-    return page_data, links
-
-def main():   
-    input_url = input("💩 Enter the URL: ")
-    try:
-        start_url = sanitise_url(input_url)
+        start_url = sanitize_url(start_url)
     except ValueError as e:
-        print(e)
-        return
-
-    domain = get_domain(start_url)
-    visited_urls = set()
-    to_visit_urls = Queue()
-    to_visit_urls.put(start_url)
-    all_headers = set(['URL', 'Title', 'META Description', 'Status code'])
-    all_rows = []
-    retry_urls = []
+        logger.error(f"Invalid URL: {e}")
+        sys.exit(1)
     
-    # Add thread safety
-    visited_urls_lock = threading.Lock()
-    all_rows_lock = threading.Lock()
-    all_headers_lock = threading.Lock()
-
-    def process_url(current_url):
-        if is_pagination_link(current_url):
-            return
-
-        page_data, links = scrape_page(current_url, domain)
-        if page_data:
-            with all_headers_lock:
-                all_headers.update(page_data.keys())
-            
-            if page_data['Status code'] == 429:
-                retry_urls.append(current_url)
-            else:
-                with all_rows_lock:
-                    all_rows.append(page_data)
-                print(f"{current_url} ✅")
-                
-                for link in links:
-                    with visited_urls_lock:
-                        if link not in visited_urls:
-                            to_visit_urls.put(link)
-
-    def worker():
-        while True:
-            try:
-                current_url = to_visit_urls.get(timeout=2)  # 2 second timeout
-                with visited_urls_lock:
-                    if current_url in visited_urls:
-                        to_visit_urls.task_done()
-                        continue
-                    visited_urls.add(current_url)
-                
-                process_url(current_url)
-                to_visit_urls.task_done()
-            except Exception:  # Queue.Empty or other exceptions
-                break
-
-    # First pass with multiple threads
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        workers = [executor.submit(worker) for _ in range(10)]
-        to_visit_urls.join()
-
-    # Handle retry URLs if any
-    if retry_urls:
-        print(f"retrying {len(retry_urls)} urls")
-        for retry_url in retry_urls:
-            to_visit_urls.put(retry_url)
+    # Load or create configuration
+    if args.config:
+        try:
+            config = CrawlConfig.from_file(args.config)
+            logger.info(f"Loaded configuration from {args.config}")
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
+            sys.exit(1)
+    else:
+        config = CrawlConfig(
+            max_workers=args.workers,
+            max_depth=args.depth,
+            max_urls=args.max_urls,
+            respect_robots_txt=not args.no_robots,
+            follow_redirects=not args.no_redirects,
+            export_format=args.format
+        )
+    
+    # Validate configuration
+    issues = config.validate()
+    if issues:
+        logger.error("Configuration validation failed:")
+        for issue in issues:
+            logger.error(f"  - {issue}")
+        sys.exit(1)
+    
+    # Initialize components
+    crawler = Crawler(config)
+    parser_instance = Parser(config)
+    analyzer = Analyzer()
+    exporter = Exporter(config.export_format)
+    
+    # Track crawl progress
+    pages_crawled = 0
+    pages_data = []
+    metrics_data = []
+    analyses = []
+    
+    def on_page_crawled(metrics, html_content):
+        """Callback for each crawled page"""
+        nonlocal pages_crawled
+        pages_crawled += 1
         
-        with ThreadPoolExecutor(max_workers=5) as executor:  # Less workers for retries
-            workers = [executor.submit(worker) for _ in range(5)]
-            to_visit_urls.join()
+        # Parse HTML
+        parsed_data, links = parser_instance.parse(html_content, metrics.url)
+        
+        # Analyze page
+        analysis = analyzer.analyze_page(parsed_data, metrics)
+        
+        # Store data
+        pages_data.append(parsed_data)
+        metrics_data.append(metrics)
+        analyses.append(analysis)
+        
+        # Print progress
+        status_icon = "✅" if metrics.status_code == 200 else "❌"
+        print(f"{status_icon} [{pages_crawled}] {metrics.url} - {metrics.status_code} - {len(analysis.issues)} issues")
+        
+        return parsed_data, links
+    
+    # Start crawling
+    print(f"\n🕷️  Starting crawl of {start_url}")
+    print(f"Configuration: {config.max_workers} workers, max depth {config.max_depth}")
+    if config.respect_robots_txt:
+        print("Respecting robots.txt")
+    print("-" * 50)
+    
+    start_time = time.time()
+    
+    try:
+        # Crawl the website
+        crawler.crawl(start_url, on_page_crawled)
+        
+        # Perform site-wide analysis
+        print("\n📊 Performing site-wide analysis...")
+        site_analysis = analyzer.analyze_site()
+        
+        # Determine output file
+        if args.output:
+            output_path = args.output
+        else:
+            domain = urlparse(start_url).netloc.replace('.', '_')
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            output_path = f"{domain}_{timestamp}"
+        
+        # Export results
+        print(f"\n💾 Exporting results to {output_path}.{config.export_format}...")
+        exported_file = exporter.export_crawl_data(
+            pages_data,
+            metrics_data,
+            analyses,
+            site_analysis,
+            output_path
+        )
+        
+        # Print summary
+        elapsed_time = time.time() - start_time
+        print("\n" + "=" * 50)
+        print("✨ CRAWL COMPLETE!")
+        print("=" * 50)
+        print(f"📈 Statistics:")
+        print(f"  • Pages crawled: {len(pages_data)}")
+        print(f"  • Time elapsed: {elapsed_time:.2f} seconds")
+        print(f"  • Pages per second: {len(pages_data) / elapsed_time:.2f}")
+        
+        if site_analysis.get('statistics'):
+            stats = site_analysis['statistics']
+            print(f"  • Average response time: {stats.get('avg_response_time_ms', 0):.0f}ms")
+            print(f"  • Average word count: {stats.get('avg_word_count', 0):.0f}")
+            print(f"  • Error pages: {stats.get('error_pages', 0)}")
+            print(f"  • Redirect pages: {stats.get('redirect_pages', 0)}")
+        
+        # Issue summary
+        total_issues = sum(len(a.issues) for a in analyses)
+        error_count = sum(1 for a in analyses for i in a.issues if i.severity == 'error')
+        warning_count = sum(1 for a in analyses for i in a.issues if i.severity == 'warning')
+        
+        print(f"\n⚠️  Issues found:")
+        print(f"  • Total issues: {total_issues}")
+        print(f"  • Errors: {error_count}")
+        print(f"  • Warnings: {warning_count}")
+        
+        # Duplicate content
+        if site_analysis.get('duplicates'):
+            print(f"\n🔍 Duplicate content found:")
+            for content_hash, urls in list(site_analysis['duplicates'].items())[:3]:
+                print(f"  • {len(urls)} pages with identical content")
+        
+        print(f"\n📁 Results saved to: {exported_file}")
+        print("\n💩 Happy SEO-ing!")
+        
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Crawl interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Crawl failed: {e}", exc_info=True)
+        sys.exit(1)
 
-    # Write the scraped data to CSV
-    sanitised_url = re.sub(r'[\\/:*?"<>|\s]', '_', start_url)
-    filename = f"{sanitised_url}_scraped_results.csv"
-
-    column_order = ['Status code', 'URL', 'Title', 'META Description'] + \
-                   sorted([col for col in all_headers if col not in {'URL', 'Title', 'META Description', 'Status code'}],
-                          key=lambda x: (x.split('-')[0], int(x.split('-')[1])) if '-' in x and x.split('-')[0].startswith('H') else (x, 0))
-
-    with open(filename, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=column_order)
-        writer.writeheader()
-        for row in all_rows:
-            writer.writerow(row)
 
 if __name__ == "__main__":
     main()
