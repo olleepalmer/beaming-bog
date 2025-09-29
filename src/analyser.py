@@ -32,7 +32,7 @@ class PageAnalysis:
     metrics: Dict[str, Any] = field(default_factory=dict)
 
 
-class Analyzer:
+class Analyser:
     """Analyze crawled data for SEO issues and opportunities"""
     
     # SEO best practice thresholds

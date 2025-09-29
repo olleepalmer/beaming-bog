@@ -13,7 +13,7 @@ import time
 from src.config import CrawlConfig
 from src.crawler import Crawler
 from src.parser import Parser
-from src.analyzer import Analyzer
+from src.analyser import Analyser
 from src.exporter import Exporter
 
 
@@ -155,7 +155,7 @@ def main():
     # Initialize components
     crawler = Crawler(config)
     parser_instance = Parser(config)
-    analyzer = Analyzer()
+    analyser = Analyser()
     exporter = Exporter(config.export_format)
     
     # Track crawl progress
@@ -173,7 +173,7 @@ def main():
         parsed_data, links = parser_instance.parse(html_content, metrics.url)
         
         # Analyze page
-        analysis = analyzer.analyze_page(parsed_data, metrics)
+        analysis = analyser.analyze_page(parsed_data, metrics)
         
         # Store data
         pages_data.append(parsed_data)
@@ -201,7 +201,7 @@ def main():
         
         # Perform site-wide analysis
         print("\n📊 Performing site-wide analysis...")
-        site_analysis = analyzer.analyze_site()
+        site_analysis = analyser.analyze_site()
         
         # Determine output file
         if args.output:
